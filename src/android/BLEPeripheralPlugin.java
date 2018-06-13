@@ -725,4 +725,20 @@ public class BLEPeripheralPlugin extends CordovaPlugin {
                 BluetoothGattDescriptor.PERMISSION_READ | BluetoothGattDescriptor.PERMISSION_WRITE);
     }
 
+    private byte[] hexStringToByteArray(String s) {
+        byte[] hex = new byte[s.length() / 2];
+        for(int i = 0; i < s.length(); i++) {
+            if(i % 2 == 0)
+            {
+                hex[i / 2] = (byte)Integer.valueOf(String.valueOf(s.charAt(i)), 16).intValue();
+                hex[i / 2] <<= 4;
+            }
+            else
+            {
+                hex[i / 2] |= (byte)Integer.valueOf(String.valueOf(s.charAt(i)), 16).intValue();
+            }
+        }
+        return hex;
+    }
+
 }
