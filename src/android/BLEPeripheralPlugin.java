@@ -296,7 +296,7 @@ public class BLEPeripheralPlugin extends CordovaPlugin {
 
         } else if (action.equals(START_ADVERTISING)) {
 
-            UUID serviceUUID = uuidFromString(args.getString(0));
+            UUID suuid = uuidFromString(args.getString(0));
             String advertisedName = args.getString(1);
             AdvertiseData scanRes = null;
 
@@ -370,6 +370,20 @@ public class BLEPeripheralPlugin extends CordovaPlugin {
                         builder.addManufacturerData(0x93, hexStringToByteArray(manData));
                     }
                     scanRes = builder.build();
+
+                    services.put(serviceUUID, service);
+
+                    if (gattServer.addService(service)) {
+                        Log.d(TAG, "Successfully added service " + serviceUUID);
+                        callbackContext.success();
+                    } else {
+                        callbackContext.error("Error adding " + service.getUuid() + " to GATT Server");
+                    }
+                }
+                catch (JSONException e) {
+                    Log.e(TAG, "Invalid JSON for Service", e);
+                    e.printStackTrace();
+                    callbackContext.error(e.getMessage());
                 }
             }
 
@@ -382,7 +396,26 @@ public class BLEPeripheralPlugin extends CordovaPlugin {
 
             bluetoothAdapter.setName(advertisedName);
 
-            bluetoothLeAdvertiser.startAdvertising(advertiseSettings, advertisementData, scanRes, advertiseCallback);
+            bluetoothLeAdvertiser.startAdvertising(advertiseSettings, advertisementData, scanRes, 
+                new AdvertiseCallback() {
+                    @Override
+                    public void onStartSuccess(AdvertiseSettings settingsInEffect) {
+                        super.onStartSuccess(settingsInEffect);
+                        Log.d(TAG, "onStartSuccess");
+                        if (advertisingStartedCallback != null) {
+                            advertisingStartedCallback.success();
+                        }
+                    }
+
+                    @Override
+                    public void onStartFailure(int errorCode) {
+                        super.onStartFailure(errorCode);
+                        Log.d(TAG, "onStartFailure");
+                        if (advertisingStartedCallback != null) {
+                            advertisingStartedCallback.error(errorCode);
+                        }
+                    }
+                });
 
             advertisingStartedCallback = callbackContext;
 
