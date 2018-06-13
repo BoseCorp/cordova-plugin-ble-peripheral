@@ -212,6 +212,8 @@ public class BLEPeripheralPlugin extends CordovaPlugin {
                 Log.d(TAG, "Creating service " + serviceUUID);
                 BluetoothGattService service = new BluetoothGattService(serviceUUID, BluetoothGattService.SERVICE_TYPE_PRIMARY);
 
+                String manufacData = json.getString("manufacturer-data");
+                
                 JSONArray characteristicArray = json.getJSONArray("characteristics");
                 for (int i = 0; i < characteristicArray.length(); i++) {
                     JSONObject jsonObject = characteristicArray.getJSONObject(i);
@@ -296,15 +298,91 @@ public class BLEPeripheralPlugin extends CordovaPlugin {
 
             UUID serviceUUID = uuidFromString(args.getString(0));
             String advertisedName = args.getString(1);
+            AdvertiseData scanRes = null;
 
-            Log.w(TAG, "App requested to advertise name " + advertisedName + " but this feature is not currently supported by the Android version of the plugin");
+            if(!args.isNull(2)) {
+                JSONObject json = args.getJSONObject(2);
+                Log.d(TAG, json.toString());
+
+                try {
+                    UUID serviceUUID = uuidFromString(json.getString("uuid"));
+                    String manData = json.getString("manufacturer-data");
+
+                    Log.d(TAG, "Creating scan response " + serviceUUID);
+                    BluetoothGattService service = new BluetoothGattService(serviceUUID, BluetoothGattService.SERVICE_TYPE_PRIMARY);
+
+                    JSONArray characteristicArray = json.getJSONArray("characteristics");
+                    for (int i = 0; i < characteristicArray.length(); i++) {
+                        JSONObject jsonObject = characteristicArray.getJSONObject(i);
+                        UUID uuid = uuidFromString(jsonObject.getString("uuid"));
+                        int properties = jsonObject.getInt("properties");
+                        int permissions = jsonObject.getInt("permissions");
+
+
+
+                        Log.d(TAG, "Adding characteristic " + uuid + " properties=" + properties + " permissions=" + permissions);
+                        BluetoothGattCharacteristic characteristic = new BluetoothGattCharacteristic(uuid, properties, permissions);
+
+                        // If notify or indicate, add the 2902 descriptor
+                        if (isNotify(characteristic) || isIndicate(characteristic)) {
+                            characteristic.addDescriptor(createClientCharacteristicConfigurationDescriptor());
+                        }
+
+                        // TODO handle JSON without descriptors
+                        JSONArray descriptorsArray = jsonObject.getJSONArray("descriptors");
+                        for (int j = 0; j < descriptorsArray.length(); j++) {
+                            JSONObject jsonDescriptor = descriptorsArray.getJSONObject(j);
+
+                            UUID descriptorUUID = uuidFromString(jsonDescriptor.getString("uuid"));
+
+                            // TODO descriptor permissions should be optional in the JSON
+                            //int descriptorPermissions = jsonDescriptor.getInt("permissions");
+                            int descriptorPermissions = BluetoothGattDescriptor.PERMISSION_READ; // | BluetoothGattDescriptor.PERMISSION_WRITE;
+
+                            // future versions need to handle more than Strings
+                            String descriptorValue = jsonDescriptor.getString("value");
+                            Log.d(TAG, "Adding descriptor " + descriptorUUID + " permissions=" + permissions + " value=" + descriptorValue);
+
+                            BluetoothGattDescriptor descriptor = new BluetoothGattDescriptor(descriptorUUID, descriptorPermissions);
+
+                            if (!characteristic.addDescriptor(descriptor)) {
+                                callbackContext.error("Failed to add descriptor " + descriptorValue);
+                                return /*valid action */ true; // stop processing because of error
+                            }
+
+                            if (!descriptor.setValue(descriptorValue.getBytes())) {
+                                callbackContext.error("Failed to set descriptor value to " + descriptorValue);
+                                return /*valid action */ true; // stop processing because of error
+                            }
+
+                        }
+                        service.addCharacteristic(characteristic);
+
+                    }
+
+                    //scanRes = getAdvertisementData(serviceUUID);
+
+                    AdvertiseData.Builder builder = new AdvertiseData.Builder();
+                    builder.setIncludeTxPowerLevel(false);
+                    builder.addServiceUuid(new ParcelUuid(serviceUUID));
+                    builder.setIncludeDeviceName(true);
+                    if(manData != null) {
+                        builder.addManufacturerData(0x93, hexStringToByteArray(manData));
+                    }
+                    scanRes = builder.build();
+                }
+            }
+
+            //Log.w(TAG, "App requested to advertise name " + advertisedName + " but this feature is not currently supported by the Android version of the plugin");
 
             BluetoothLeAdvertiser bluetoothLeAdvertiser = bluetoothAdapter.getBluetoothLeAdvertiser();
 
             AdvertiseData advertisementData = getAdvertisementData(serviceUUID);
             AdvertiseSettings advertiseSettings = getAdvertiseSettings();
 
-            bluetoothLeAdvertiser.startAdvertising(advertiseSettings, advertisementData, advertiseCallback);
+            bluetoothAdapter.setName(advertisedName);
+
+            bluetoothLeAdvertiser.startAdvertising(advertiseSettings, advertisementData, scanRes, advertiseCallback);
 
             advertisingStartedCallback = callbackContext;
 
