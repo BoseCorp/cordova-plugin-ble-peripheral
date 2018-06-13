@@ -211,8 +211,6 @@ public class BLEPeripheralPlugin extends CordovaPlugin {
                 UUID serviceUUID = uuidFromString(json.getString("uuid"));
                 Log.d(TAG, "Creating service " + serviceUUID);
                 BluetoothGattService service = new BluetoothGattService(serviceUUID, BluetoothGattService.SERVICE_TYPE_PRIMARY);
-
-                String manufacData = json.getString("manufacturer-data");
                 
                 JSONArray characteristicArray = json.getJSONArray("characteristics");
                 for (int i = 0; i < characteristicArray.length(); i++) {
