@@ -55,6 +55,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Hashtable;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -227,12 +228,25 @@ public class BLEPeripheralPlugin extends CordovaPlugin {
                     UUID uuid = uuidFromString(jsonObject.getString("uuid"));
                     int properties = jsonObject.getInt("properties");
                     int permissions = jsonObject.getInt("permissions");
-                    Log.d(TAG, "Adding characteristic " + uuid + " properties=" + properties + " permissions=" + permissions);
                     BluetoothGattCharacteristic characteristic = new BluetoothGattCharacteristic(uuid, properties, permissions);
+
+
+                    String cval;
+                    try {
+                        cval = jsonObject.getString("value");
+                    } catch(JSONException e) {
+                        cval = null;
+                    }
+                    if(cval != null) {
+                        characteristic.setValue(hexStringToByteArray(cval));
+                    }
+
+                    Log.d(TAG, "Adding characteristic " + uuid + " properties=" + properties + " permissions=" + permissions + " value=" + (cval == null ? "<null>" : cval));
 
                     // If notify or indicate, add the 2902 descriptor
                     if (isNotify(characteristic) || isIndicate(characteristic)) {
                         characteristic.addDescriptor(createClientCharacteristicConfigurationDescriptor());
+                        Log.d(TAG, "Adding descriptor ClientCharacteristicConfigurationDescriptor");
                     }
 
                     // TODO handle JSON without descriptors
@@ -257,7 +271,7 @@ public class BLEPeripheralPlugin extends CordovaPlugin {
                             return /*valid action */ true; // stop processing because of error
                         }
 
-                        if (!descriptor.setValue(descriptorValue.getBytes())) {
+                        if (!descriptor.setValue(hexStringToByteArray(descriptorValue))) {
                             callbackContext.error("Failed to set descriptor value to " + descriptorValue);
                             return /*valid action */ true; // stop processing because of error
                         }
@@ -371,7 +385,9 @@ public class BLEPeripheralPlugin extends CordovaPlugin {
 
                     AdvertiseData.Builder builder = new AdvertiseData.Builder();
                     builder.setIncludeTxPowerLevel(false);
-                    builder.addServiceUuid(new ParcelUuid(serviceUUID));
+                    builder.addServiceUuid(new ParcelUuid(uuidFromString("1812")));
+                    builder.addServiceUuid(new ParcelUuid(uuidFromString("180F")));
+                    builder.addServiceUuid(new ParcelUuid(uuidFromString("180A")));
                     builder.setIncludeDeviceName(true);
                     if(manData != null) {
                         //builder.addManufacturerData(0x0093, hexStringToByteArray(manData));
@@ -400,7 +416,7 @@ public class BLEPeripheralPlugin extends CordovaPlugin {
 
             AdvertiseData.Builder builder = new AdvertiseData.Builder();
             builder.setIncludeTxPowerLevel(false);
-            builder.setIncludeDeviceName(false);
+            builder.setIncludeDeviceName(true);
             builder.addManufacturerData(0x0093, new byte[]{0x08, 0x00});
             AdvertiseData advertisementData =  builder.build();
 
@@ -422,7 +438,7 @@ public class BLEPeripheralPlugin extends CordovaPlugin {
                         @Override
                         public void onStartFailure(int errorCode) {
                             super.onStartFailure(errorCode);
-                            Log.d(TAG, "onStartFailure");
+                            Log.d(TAG, "onStartFailure error code: " + errorCode);
                             if (advertisingStartedCallback != null) {
                                 advertisingStartedCallback.error(errorCode);
                             }
@@ -436,7 +452,8 @@ public class BLEPeripheralPlugin extends CordovaPlugin {
             UUID serviceUUID = uuidFromString(args.getString(0));
             int index = args.getInt(2);
             UUID characteristicUUID = index != -1 ? null : uuidFromString(args.getString(1));
-            byte[] value = args.getArrayBuffer(3);
+            int key = args.getInt(3);
+            byte[] value = {0x00, (byte)key};
 
             BluetoothGattService service = services.get(serviceUUID);
             if (service == null) {
@@ -465,7 +482,7 @@ public class BLEPeripheralPlugin extends CordovaPlugin {
                 notifyRegisteredDevices(characteristic);
             }
 
-            Log.d(TAG, "Set characteristic, " + characteristicUUID + ", with value, " + value + " on service, " + serviceUUID);
+            Log.d(TAG, "Set characteristic, " + characteristicUUID + ", with value, " + Arrays.toString(value) + " on service, " + serviceUUID);
 
             callbackContext.success();
 
@@ -599,6 +616,7 @@ public class BLEPeripheralPlugin extends CordovaPlugin {
     }
 
     private BluetoothGattServerCallback gattServerCallback = new BluetoothGattServerCallback() {
+
         @Override
         public void onConnectionStateChange(BluetoothDevice device, int status, int newState) {
             super.onConnectionStateChange(device, status, newState);
@@ -618,6 +636,7 @@ public class BLEPeripheralPlugin extends CordovaPlugin {
                                 if (BluetoothDevice.ACTION_BOND_STATE_CHANGED.equals(action)) {
                                     final int state = intent.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, BluetoothDevice.ERROR);
 
+                                    Log.d(TAG, "Bond intent state: " + state);
                                     if (state == BluetoothDevice.BOND_BONDED) {
                                         final BluetoothDevice bondedDevice = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
 
@@ -634,16 +653,18 @@ public class BLEPeripheralPlugin extends CordovaPlugin {
                                         });
                                         Log.d(TAG, "successfully bonded");
                                     }
+                                } else if(BluetoothDevice.ACTION_PAIRING_REQUEST.equals(action)) {
+                                    Log.d(TAG, "Pair request received");
                                 }
                             }
                         }, new IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED));
 
                         // create bond
-                        try {
+                        /*try {
                             device.setPairingConfirmation(true);
                         } catch (final SecurityException e) {
                             Log.d(TAG, e.getMessage(), e);
-                        }
+                        }*/
                         device.createBond();
                     } else if (device.getBondState() == BluetoothDevice.BOND_BONDED) {
                         handler.post(new Runnable() {
@@ -678,9 +699,12 @@ public class BLEPeripheralPlugin extends CordovaPlugin {
                         registeredDevices.remove(deviceAddress);
                     }
                     break;
-
+                case BluetoothProfile.STATE_CONNECTING:
+                    Log.d(TAG, "Attempting to connect to device...");
+                case BluetoothProfile.STATE_DISCONNECTING:
+                    Log.d(TAG, "Attempting to disconnect from device...");
                 default:
-                    // do nothing
+                    Log.d(TAG, "Default state change... " + newState);
                     break;
             }
         }
@@ -694,7 +718,7 @@ public class BLEPeripheralPlugin extends CordovaPlugin {
         @Override
         public void onCharacteristicReadRequest(BluetoothDevice device, int requestId, int offset, BluetoothGattCharacteristic characteristic) {
             super.onCharacteristicReadRequest(device, requestId, offset, characteristic);
-            Log.d(TAG, "onCharacteristicReadRequest characteristic: " + characteristic.getUuid() + ", offset: " + offset);
+            Log.d(TAG, "onCharacteristicReadRequest characteristic: " + characteristic.getUuid() + ", offset: " + offset + ", value: " + Arrays.toString(characteristic.getValue()));
 
             gattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, characteristic.getValue());
         }
@@ -734,11 +758,11 @@ public class BLEPeripheralPlugin extends CordovaPlugin {
         @Override
         public void onDescriptorWriteRequest(BluetoothDevice device, int requestId, BluetoothGattDescriptor descriptor, boolean preparedWrite, boolean responseNeeded, int offset, byte[] value) {
             super.onDescriptorWriteRequest(device, requestId, descriptor, preparedWrite, responseNeeded, offset, value);
-            Log.d(TAG, "onDescriptorWriteRequest");
-            Log.d(TAG, Arrays.toString(value));
+            Log.d(TAG, "onDescriptorWriteRequest: reqId: " + requestId + " desc: " + descriptor.getUuid() + " offset: "+ offset + " value: " + Arrays.toString(value));
 
             if (CLIENT_CHARACTERISTIC_CONFIGURATION_UUID.equals(descriptor.getUuid())) {
                 if (Arrays.equals(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE, value)) {
+
                     Log.d(TAG, "Subscribe device to notifications: " + device);
                     registeredDevices.add(device);
                 } else if (Arrays.equals(BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE, value)) {
@@ -770,12 +794,61 @@ public class BLEPeripheralPlugin extends CordovaPlugin {
         @Override
         public void onDescriptorReadRequest(BluetoothDevice device, int requestId, int offset, BluetoothGattDescriptor descriptor) {
             super.onDescriptorReadRequest(device, requestId, offset, descriptor);
-            Log.d(TAG, "onDescriptorReadRequest device=" + device + " descriptor=" + descriptor.getUuid());
+            Log.d(TAG, "onDescriptorReadRequest device=" + device + " reId=" + requestId + " descriptor=" + descriptor.getUuid() + " offset=" + offset + " val=" + Arrays.toString(descriptor.getValue()));
+
+            UUID refUUID = uuidFromString("2908");
+            if(descriptor.getUuid().equals(refUUID)) {
+                if (requestId < 5) {
+                    UUID hidUUID = uuidFromString("1812");
+                    BluetoothGattService svc = services.get(hidUUID);
+                    UUID reportUUID = uuidFromString("2A4D");
+
+                    List<BluetoothGattCharacteristic> chars = svc.getCharacteristics();
+                    int x = 1;
+                    for(BluetoothGattCharacteristic c : chars)
+                    {
+                        if(c.getUuid().equals(reportUUID))
+                        {
+                            if(requestId == x)
+                            {
+                                descriptor = c.getDescriptor(refUUID);
+                                break;
+                            }
+                            else
+                            {
+                                x++;
+                            }
+                        }
+                    }
+                } else {
+                    UUID hidUUID = uuidFromString("1812");
+                    BluetoothGattService svc = services.get(hidUUID);
+                    UUID reportUUID = uuidFromString("2A4D");
+
+                    List<BluetoothGattCharacteristic> chars = svc.getCharacteristics();
+                    int x = 0;
+                    for(BluetoothGattCharacteristic c : chars)
+                    {
+                        if(c.getUuid().equals(reportUUID))
+                        {
+                            if(x == 2)
+                            {
+                                descriptor = c.getDescriptor(refUUID);
+                                break;
+                            }
+                            else
+                            {
+                                x++;
+                            }
+                        }
+                    }
+                }
+            }
 
             gattServer.sendResponse(device,
                     requestId,
                     BluetoothGatt.GATT_SUCCESS,
-                    0,
+                    offset,
                     descriptor.getValue());
 
         }
@@ -799,9 +872,9 @@ public class BLEPeripheralPlugin extends CordovaPlugin {
 
     private AdvertiseSettings getAdvertiseSettings() {
         AdvertiseSettings.Builder builder = new AdvertiseSettings.Builder();
-        builder.setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY);
+        builder.setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_BALANCED);
         builder.setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH);
-        builder.setConnectable(false);
+        builder.setConnectable(true);
         builder.setTimeout(120000);
 
         return builder.build();
@@ -874,6 +947,32 @@ public class BLEPeripheralPlugin extends CordovaPlugin {
             }
         }
         return hex;
+    }
+
+    private static String byteArrayToHex(byte[] a) {
+        StringBuilder sb = new StringBuilder(a.length * 2);
+        for(byte b: a)
+            sb.append(String.format("%02x", b));
+        return sb.toString();
+    }
+
+    @Override
+    public void finalize()
+    {
+        BluetoothLeAdvertiser bluetoothLeAdvertiser = bluetoothAdapter.getBluetoothLeAdvertiser();
+        bluetoothLeAdvertiser.stopAdvertising(new AdvertiseCallback() {
+            @Override
+            public void onStartSuccess(AdvertiseSettings settingsInEffect) {
+                super.onStartSuccess(settingsInEffect);
+                Log.d(TAG, "Successfully stopped advertising...");
+            }
+
+            @Override
+            public void onStartFailure(int errorCode) {
+                super.onStartFailure(errorCode);
+                Log.d(TAG, "Failed to stop advertising... : " + errorCode);
+            }
+        });
     }
 
 }
