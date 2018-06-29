@@ -182,14 +182,14 @@ module.exports = {
     },
 
     // setting the value automatically notifies subscribers
-    setCharacteristicValue: function(service, characteristic, value) {
+    setCharacteristicValue: function(service, characteristic, index, value) {
 
         return new Promise(function(resolve, reject) {
-            if (value.constructor !== ArrayBuffer) {
-                // TODO try calling value.buffer before rejecting
-                reject('value must be an ArrayBuffer');
-            }
-            cordova.exec(resolve, reject, 'BLEPeripheral', 'setCharacteristicValue', [service, characteristic, value]);
+//            if (value.constructor !== ArrayBuffer) {
+//                // TODO try calling value.buffer before rejecting
+//                reject('value must be an ArrayBuffer');
+//            }
+            cordova.exec(resolve, reject, 'BLEPeripheral', 'setCharacteristicValue', [service, characteristic, index, value]);
         });
 
     },
