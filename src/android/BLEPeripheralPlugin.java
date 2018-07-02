@@ -71,6 +71,7 @@ public class BLEPeripheralPlugin extends CordovaPlugin {
     private static final String ADD_CHARACTERISTIC = "addCharacteristic";
     private static final String PUBLISH_SERVICE = "publishService";
     private static final String START_ADVERTISING = "startAdvertising";
+    private static final String STOP_ADVERTISING = "stopAdvertising";
     private static final String SET_CHARACTERISTIC_VALUE = "setCharacteristicValue";
     private static final String SET_DESCRIPTOR_VALUE = "setDescriptorValue";
 
@@ -424,29 +425,12 @@ public class BLEPeripheralPlugin extends CordovaPlugin {
 
             bluetoothAdapter.setName(advertisedName);
 
-            bluetoothLeAdvertiser.startAdvertising(advertiseSettings, advertisementData, scanRes,
-                    new AdvertiseCallback() {
-                        @Override
-                        public void onStartSuccess(AdvertiseSettings settingsInEffect) {
-                            super.onStartSuccess(settingsInEffect);
-                            Log.d(TAG, "onStartSuccess");
-                            if (advertisingStartedCallback != null) {
-                                advertisingStartedCallback.success();
-                            }
-                        }
-
-                        @Override
-                        public void onStartFailure(int errorCode) {
-                            super.onStartFailure(errorCode);
-                            Log.d(TAG, "onStartFailure error code: " + errorCode);
-                            if (advertisingStartedCallback != null) {
-                                advertisingStartedCallback.error(errorCode);
-                            }
-                        }
-                    });
+            bluetoothLeAdvertiser.startAdvertising(advertiseSettings, advertisementData, scanRes, advertiseCallback);
 
             advertisingStartedCallback = callbackContext;
 
+        } else if(action.equals(STOP_ADVERTISING)) {
+            bluetoothAdapter.getBluetoothLeAdvertiser().stopAdvertising(advertiseCallback);
         } else if (action.equals(SET_CHARACTERISTIC_VALUE)) {
 
             UUID serviceUUID = uuidFromString(args.getString(0));
@@ -893,7 +877,7 @@ public class BLEPeripheralPlugin extends CordovaPlugin {
         @Override
         public void onStartFailure(int errorCode) {
             super.onStartFailure(errorCode);
-            Log.d(TAG, "onStartFailure");
+            Log.d(TAG, "onStartFailure error code: " + errorCode);
             if (advertisingStartedCallback != null) {
                 advertisingStartedCallback.error(errorCode);
             }
