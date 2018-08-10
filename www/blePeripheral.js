@@ -53,6 +53,7 @@ function convertToNativeJS(object) {
 
 var onWriteRequestCallback;
 var onBluetoothStateChangeCallback;
+var onBondStateChangedCallback;
 
 function registerWriteRequestCallback() {
 
@@ -94,6 +95,24 @@ function registerBluetoothStateChangeCallback() {
 }
 registerBluetoothStateChangeCallback();
 
+function registerBondStateChangedCallback() {
+    var bondStateChanged = function(state) {
+        console.log('boneStateChanged', state);
+
+        if (onBondStateChangedCallback && typeof onBondStateChangedCallback === 'function') {
+            onBondStateChangedCallback(state);
+        }
+    };
+
+    var failure = function() {
+        // this should never happen
+        console.log("Failed to register onBondStateChangedListener");
+    };
+
+    cordova.exec(bondStateChanged, failure, 'BLEPeripheral', 'setBondStateChangedListener', []);
+}
+registerBondStateChangedCallback();
+
 /* 
 Characteristic premissions are not consistent across platforms. This will need to be reconciled.
 Maybe permissions should be optional and default to read/write based on the properties.
@@ -131,6 +150,19 @@ module.exports = {
         WRITEABLE: cordova.platformId === 'ios' ? 0x02 : 0x10,
         READ_ENCRYPTION_REQUIRED: cordova.platformId === 'ios' ? 0x04 : 0x02,
         WRITE_ENCRYPTION_REQUIRED: cordova.platformId === 'ios' ? 0x08: 0x20
+    },
+
+    connectionStates: {
+        0: "disconnected",
+        1: "connecting",
+        2: "connected",
+        3: "disconnecting"
+    },
+
+    bondStates: {
+        10: "bond_none",
+        11: "bonding",
+        12: "bonded"
     },
 
     createService: function(uuid) {
@@ -236,6 +268,10 @@ module.exports = {
 
     onBluetoothStateChange: function(callback) {
         onBluetoothStateChangeCallback = callback;
+    },
+
+    onBondStateChange: function(callback) {
+        onBondStateChangedCallback = callback;
     }
 
 };

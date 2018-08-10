@@ -83,6 +83,7 @@ public class BLEPeripheralPlugin extends CordovaPlugin {
     // private static final String START_STATE_NOTIFICATIONS = "startStateNotifications";
     // private static final String STOP_STATE_NOTIFICATIONS = "stopStateNotifications";
     private static final String SET_BLUETOOTH_STATE_CHANGED_LISTENER = "setBluetoothStateChangedListener";
+    private static final String SET_BOND_STATE_CHANGED_LISTENER = "setBondStateChangedListener";
 
     private static final String SETTINGS = "showBluetoothSettings";
     private static final String ENABLE = "enable";
@@ -91,6 +92,7 @@ public class BLEPeripheralPlugin extends CordovaPlugin {
     private CallbackContext enableBluetoothCallback;
     private CallbackContext characteristicValueChangedCallback;
     private CallbackContext advertisingStartedCallback;
+    private CallbackContext bondStateChangedCallback;
 
     private static final String TAG = "BLEPeripheral";
     private static final int REQUEST_ENABLE_BLUETOOTH = 17;
@@ -110,6 +112,7 @@ public class BLEPeripheralPlugin extends CordovaPlugin {
         put(BluetoothAdapter.STATE_ON, "on");
         put(BluetoothAdapter.STATE_TURNING_ON, "turningOn");
     }};
+    private int connectionState = BluetoothProfile.STATE_DISCONNECTED;
 
     @Override
     public void initialize(CordovaInterface cordova, CordovaWebView webView) {
@@ -169,6 +172,10 @@ public class BLEPeripheralPlugin extends CordovaPlugin {
         if (action.equals(SET_CHARACTERISTIC_VALUE_CHANGED_LISTENER)) {
 
             characteristicValueChangedCallback = callbackContext;
+
+        } else if (action.equals(SET_BOND_STATE_CHANGED_LISTENER)) {
+
+            bondStateChangedCallback = callbackContext;
 
         } else if (action.equals(SET_BLUETOOTH_STATE_CHANGED_LISTENER)) {
 
@@ -577,6 +584,21 @@ public class BLEPeripheralPlugin extends CordovaPlugin {
         this.stateReceiver = null;
     }
 
+    private void sendBondStateChanged(int newConnectionState, int newBondState) {
+        if(bondStateChangedCallback != null) {
+            try {
+                JSONObject message = new JSONObject();
+                message.put("connectionState", newConnectionState);
+                message.put("bondState", newBondState);
+
+                PluginResult result = new PluginResult(PluginResult.Status.OK, message);
+                result.setKeepCallback(true);
+                bondStateChangedCallback.sendPluginResult(result);
+            } catch (JSONException e) {
+                Log.e(TAG, "JSON encoding failed in onBondStateChanged", e);
+            }
+        }
+    }
 
     @Override
     public void onActivityResult(int requestCode, int resultCode, Intent data) {
@@ -605,6 +627,9 @@ public class BLEPeripheralPlugin extends CordovaPlugin {
         public void onConnectionStateChange(BluetoothDevice device, int status, int newState) {
             super.onConnectionStateChange(device, status, newState);
             Log.d(TAG, "onConnectionStateChange status: " + status + ", newState: " + newState);
+            connectionState = newState;
+
+            sendBondStateChanged(newState, device.getBondState());
 
             switch (newState) {
                 case BluetoothProfile.STATE_CONNECTED:
